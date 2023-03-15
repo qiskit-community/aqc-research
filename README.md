@@ -1,1 +1,1 @@
-# aqc-research
+# AQC Research
