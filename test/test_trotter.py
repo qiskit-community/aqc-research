@@ -36,11 +36,22 @@ class TestTrotterFramework(QiskitTestCase):
         super().setUp()
         np.random.seed(self._seed)
 
-    def test_trotter_vs_exact(self):
+    def test_trotter_vs_exact_xxx(self):
         """Tests time evolution routines Trotter vs exact."""
-        nsteps, delta = 30, 1.0
+        self._run(1.0, 1.0, 1.0)
+
+    def test_trotter_vs_exact_xxz(self):
+        """Tests time evolution routines Trotter vs exact."""
+        self._run(1.0, 1.0, 2.0)
+
+    def test_trotter_vs_exact_xyz(self):
+        """Tests time evolution routines Trotter vs exact."""
+        self._run(1.0, 2.0, 3.0)
+
+    def _run(self, jx, jy, jz):
+        nsteps = 30
         for num_qubits in range(2, self._max_num_qubits + 1):
-            hamiltonian = trotop.make_hamiltonian(num_qubits, delta)
+            hamiltonian = trotop.make_hamiltonian(num_qubits, jx, jy, jz)
             for second_order in [False, True]:
                 for evol_tm in [0.5, 0.7, 1.0, 1.5, 2.0]:
                     ini_state_func = trotop.neel_init_state
@@ -65,14 +76,18 @@ class TestTrotterFramework(QiskitTestCase):
                             num_qubits=num_qubits,
                             evol_time=evol_tm * 0.5,
                             num_steps=nsteps // 2,
-                            delta=delta,
+                            jx=jx,
+                            jy=jy,
+                            jz=jz,
                             second_order=second_order,
                         )
                         half_trot2 = trotop.Trotter(
                             num_qubits=num_qubits,
                             evol_time=evol_tm * 0.5,
                             num_steps=nsteps - nsteps // 2,
-                            delta=delta,
+                            jx=jx,
+                            jy=jy,
+                            jz=jz,
                             second_order=second_order,
                         )
                         trot_state = half_trot2.as_qcircuit(
@@ -86,7 +101,9 @@ class TestTrotterFramework(QiskitTestCase):
                             num_qubits=num_qubits,
                             evol_time=evol_tm,
                             num_steps=nsteps,
-                            delta=delta,
+                            jx=jx,
+                            jy=jy,
+                            jz=jz,
                             second_order=second_order,
                         )
                         mps = full_trot.as_mps(

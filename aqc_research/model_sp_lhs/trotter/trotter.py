@@ -55,7 +55,9 @@ class Trotter:
         num_qubits: int,
         evol_time: float,
         num_steps: int,
-        delta: float = 1.0,
+        jx:float = 1.0,
+        jy:float = 1.0,
+        jz:float = 1.0,
         second_order: bool,
     ):
         """
@@ -63,19 +65,23 @@ class Trotter:
             num_qubits: number of qubits.
             evol_time: evolution time.
             num_steps: number of Trotter steps (full layers).
-            delta: parameter of corresponding Hamiltonian - scale of z-terms.
+            jx: XX coupling value
+            jy = YY coupling value
+            jz = ZZ coupling value
             second_order: True, if the 2nd order Trotter is intended.
         """
         assert chk.is_int(num_qubits, num_qubits >= 2)
         assert chk.is_float(evol_time, evol_time > 0)
         assert chk.is_int(num_steps, num_steps >= 1)
-        assert chk.is_float(delta, delta > 0)
+        assert all(chk.is_float(j, j > 0) for j in (jx, jy, jz))
         assert isinstance(second_order, bool)
 
         self._num_qubits = num_qubits
         self._evol_time = evol_time
         self._num_trotter_steps = num_steps
-        self._delta = delta
+        self._jx = jx
+        self._jy = jy
+        self._jz = jz
         self._dt = evol_time / float(num_steps)
         self._second_order = second_order
 
@@ -115,7 +121,9 @@ class Trotter:
         qc = trotter_circuit(
             qc=qc_ini,
             dt=self._dt,
-            delta=self._delta,
+            jx=self._jx,
+            jy=self._jy,
+            jz=self._jz,
             num_trotter_steps=self._num_trotter_steps,
             second_order=self._second_order,
         )
@@ -145,7 +153,9 @@ class Trotter:
         return trotter_circuit(
             ini_state,
             dt=self._dt,
-            delta=self._delta,
+            jx=self._jx,
+            jy=self._jy,
+            jz=self._jz,
             num_trotter_steps=self._num_trotter_steps,
             second_order=self._second_order,
         )
@@ -173,14 +183,16 @@ class Trotter:
         qc = trotter_circuit(
             ini_state,
             dt=self._dt,
-            delta=self._delta,
+            jx=self._jx,
+            jy=self._jy,
+            jz=self._jz,
             num_trotter_steps=self._num_trotter_steps,
             second_order=self._second_order,
         )
         return mpsop.mps_from_circuit(qc, trunc_thr=trunc_thr, out_state=out_state)
 
 
-def make_hamiltonian(num_qubits: int, delta: float) -> np.ndarray:
+def make_hamiltonian(num_qubits: int, jx:float=1.0, jy:float=1.0, jz: float=1.0) -> np.ndarray:
     """
     Makes a Hamiltonian matrix. This function is used only for testing to ensure
     generated Trotterized ansatz is consistent with Hamiltonian.
@@ -192,7 +204,9 @@ def make_hamiltonian(num_qubits: int, delta: float) -> np.ndarray:
 
     Args:
         num_qubits: number of qubits.
-        delta: parameter of the Hamiltonian - scaling factor of z-terms.
+        jx: XX coupling value
+        jy = YY coupling value
+        jz = ZZ coupling value
 
     Returns:
         Hamiltonian matrix.
@@ -226,7 +240,7 @@ def make_hamiltonian(num_qubits: int, delta: float) -> np.ndarray:
     yterms = np.sum(sy_sy, axis=0)
     zterms = np.sum(sz_sz, axis=0)
 
-    h = -0.25 * (xterms + yterms + delta * zterms)
+    h = -0.25 * (jx * xterms + jy * yterms + jz * zterms)
     return h
 
 
@@ -266,21 +280,23 @@ def exact_evolution(
     return exact_state
 
 
-def trotter_alphas(dt: float, delta: float) -> np.ndarray:
+def trotter_alphas(dt: float, jx: float, jy:float, jz:float) -> np.ndarray:
     """
     Computes 3 angular parameters (``alphas``) of a Trotter building block.
 
     Args:
         dt: time step in Trotter algorithm.
-        delta: parameter of corresponding Hamiltonian.
+        jx: XX coupling value
+        jy = YY coupling value
+        jz = ZZ coupling value
 
     Returns:
         angular parameters of Trotter building block.
     """
     assert chk.is_float(dt, dt > 0)
-    assert chk.is_float(delta, delta > 0)
+    assert all(chk.is_float(j, j > 0) for j in (jx, jy, jz))
 
-    return np.asarray([np.pi / 2 - 0.5 * delta * dt, 0.5 * dt - np.pi / 2, np.pi / 2 - 0.5 * dt])
+    return np.asarray([np.pi / 2 - 0.5 * jz * dt, 0.5 * dt * jx - np.pi / 2, np.pi / 2 - 0.5 * dt * jy])
 
 
 def trotter_global_phase(num_qubits: int, num_steps: int, second_order: bool) -> float:
@@ -318,7 +334,9 @@ def trotter_circuit(
     qc: QuantumCircuit,
     *,
     dt: float,
-    delta: float,
+    jx=1.0,
+    jy=1.0,
+    jz=1.0,
     num_trotter_steps: int,
     second_order: bool,
 ) -> QuantumCircuit:
@@ -338,7 +356,9 @@ def trotter_circuit(
     Args:
         qc: quantum circuit to be augmented by the Trotter one.
         dt: evolution time per step (layer) in Trotter algorithm.
-        delta: parameter of corresponding Hamiltonian.
+        jx: XX coupling value
+        jy = YY coupling value
+        jz = ZZ coupling value
         num_trotter_steps: number of Trotter steps (layers).
         second_order: True, if the 2nd order Trotter is intended.
 
@@ -350,18 +370,18 @@ def trotter_circuit(
 
     def _trotter_block(k: int, params: np.ndarray):
         qc.rz(-np.pi / 2, k + 1)
-        qc.cnot(k + 1, k)
+        qc.cx(k + 1, k)
         qc.rz(params[0], k)
         qc.ry(params[1], k + 1)
-        qc.cnot(k, k + 1)
+        qc.cx(k, k + 1)
         qc.ry(params[2], k + 1)
-        qc.cnot(k + 1, k)
+        qc.cx(k + 1, k)
         qc.rz(np.pi / 2, k)
 
     # Compute Trotter parameters. In case of 2nd order, the first and the trail
     # half-layers should be initialized differently ("betas").
-    alphas = trotter_alphas(dt, delta)
-    betas = trotter_alphas(dt * 0.5, delta)  # dt/2 (!) in first/last half-layers
+    alphas = trotter_alphas(dt, jx, jy, jz)
+    betas = trotter_alphas(dt * 0.5, jx, jy, jz)  # dt/2 (!) in first/last half-layers
 
     # Build the main part of the 1st or 2nd order Trotter circuit.
     for j in range(num_trotter_steps):
@@ -480,7 +500,9 @@ def init_ansatz_to_trotter(
     thetas: np.ndarray,
     *,
     evol_time: float,
-    delta: float,
+    jx: float = 1.0,
+    jy: float = 1.0,
+    jz: float = 1.0,
     layer_range: Optional[Tuple[int, int]] = None,
 ) -> np.ndarray:
     """
@@ -494,7 +516,9 @@ def init_ansatz_to_trotter(
         thetas: angular parameters of the circuit.
         evol_time: evolution time; unit-block layers within ``layer_range``
                    should model state evolution for that time.
-        delta: parameter in corresponding Hamiltonian.
+        jx: XX coupling value
+        jy = YY coupling value
+        jz = ZZ coupling value
         layer_range: a couple of indices ``[from, to)`` that defines a range of
                      unit-block layers to be initialized; None value implies
                      a full range.
@@ -505,7 +529,7 @@ def init_ansatz_to_trotter(
     """
     th2q, layer_range = slice2q(circ, thetas, layer_range=layer_range)
     delta_t = evol_time / float(layer_range[1] - layer_range[0])
-    alphas = trotter_alphas(dt=delta_t, delta=delta)
+    alphas = trotter_alphas(dt=delta_t, jx=jx, jy=jy, jz=jz)
     assert chk.float_1d(alphas, alphas.size == 3)
     assert isinstance(circ, TrotterAnsatz)
     layer_0 = first_layer_included(circ, layer_range)
@@ -527,7 +551,7 @@ def init_ansatz_to_trotter(
     # Recall, the trailing half-layer takes exactly the same parameters as the
     # first one, although it does not present explicitly in TrotterAnsatz.
     if circ.is_second_order and layer_0:
-        alphas = trotter_alphas(dt=delta_t * 0.5, delta=delta)  # dt/2 (!)
+        alphas = trotter_alphas(dt=delta_t * 0.5, jx=jx, jy=jy, jz=jz)  # dt/2 (!)
         half = circ.half_layer_num_blocks // 3  # half of triplets in layer_0
         assert 3 * half == circ.half_layer_num_blocks  # divisible
         th2q[0, 0:half, 5] = alphas[0]
